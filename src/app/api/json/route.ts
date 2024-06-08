@@ -1,7 +1,9 @@
-import { NextRequest } from "next/server"
+import { openai } from "@/app/lib/openai"
+import { NextRequest, NextResponse } from "next/server"
 import { ZodTypeAny, z } from "zod"
+import { EXAMPLE_ANSWER, EXAMPLE_PROMPT } from "./example"
 
-const jsonSchemaToZod = (schema: any) => {
+const jsonSchemaToZod = (schema: any): ZodTypeAny => {
     const type = determineSchemaType(schema)
 
     switch(type) {
@@ -17,7 +19,7 @@ const jsonSchemaToZod = (schema: any) => {
             const shape : Record<string, ZodTypeAny> = {}
 
             for (const key in schema) {
-                if(key !== type){
+                if(key !== "type"){
                     shape[key] = jsonSchemaToZod(schema[key])
                 }
             }
@@ -35,6 +37,7 @@ const determineSchemaType = (schema: any) => {
                 return typeof schema
             }
     }
+    return schema.type
 }
 
 export const POST = async (req: NextRequest) => {
@@ -49,9 +52,65 @@ export const POST = async (req: NextRequest) => {
     const { data, format} = genericSchema.parse(body)
 
     //Create a schema from the expected user format
-
     const dynamicSchema = jsonSchemaToZod(format)
 
+    type PromiseExecutor<T> =
+     (
+        resolve: (value: T) => void, 
+        reject: (reason?: any) => void
+    ) => void
 
-    return new Response("OK")
+    class RetryablePromise<T> extends Promise<T> {
+        static async retry<T>(
+            retries: number,
+            executor: PromiseExecutor<T>) :Promise<T>{
+                return new RetryablePromise(executor).catch((error) => {
+                    console.error(`Failed to execute promise: ${error}`)
+                    return retries > 0 ?
+                        RetryablePromise.retry(retries - 1, executor) : 
+                        RetryablePromise.reject()
+        })}
+    }
+    
+    const result = await RetryablePromise.retry<object>(3, async (resolve, reject) => {
+        try{
+
+            const content = `DATA: \n"${data}"\n\n-----------\nExpected JSON format: 
+                    ${JSON.stringify(format,null,2)}
+                    \n\n-----------\nValid JSON output in expected format:`
+
+            const res = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [
+                    {
+                        role: "assistant",
+                        content: "You are an AI that converts data to the attached JSON format. You respond with nothing but valid JSON based on the input data. Your output should DIRECTLY be valid JSON, nothing added before and after. You will being with the opening curly brace and end with the closing curly brace. Only if you absolutely cannot determine a field, use the value null."
+                    },
+                    {
+                        role: "user",
+                        content: EXAMPLE_PROMPT
+                    },
+                    {
+                        role: "user",
+                        content: EXAMPLE_ANSWER
+                    },
+                    {
+                        role: "user",
+                        content: content
+
+                    }
+                ]
+            })
+
+            const text = res.choices[0].message.content
+
+            const validationResult = dynamicSchema.parse(JSON.parse(text || ""))
+
+            return resolve(validationResult)
+        } catch(error){
+            reject(error)
+        }
+    })
+
+    return NextResponse.json(result, {status: 200})
 }
