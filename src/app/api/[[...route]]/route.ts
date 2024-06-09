@@ -1,9 +1,18 @@
-import { openai } from "@/app/lib/openai"
 import { NextRequest, NextResponse } from "next/server"
 import { ZodTypeAny, z } from "zod"
 import { EXAMPLE_ANSWER, EXAMPLE_PROMPT } from "./example"
+import { Hono } from "hono"
+import { handle } from "hono/vercel"
+import { env } from "hono/adapter"
+import OpenAI from "openai"
 
 export const runtime = 'edge'
+
+const app = new Hono().basePath("/api")
+
+type Environment = {
+    OPENAI_API_KEY: string
+}
 
 const jsonSchemaToZod = (schema: any): ZodTypeAny => {
     const type = determineSchemaType(schema)
@@ -42,9 +51,17 @@ const determineSchemaType = (schema: any) => {
     return schema.type
 }
 
-export const POST = async (req: NextRequest) => {
+app.get
 
-    const body = await req.json()
+app.post('/json', async (c) => {
+
+    const { OPENAI_API_KEY } = env<Environment>(c)
+
+    const openai = new OpenAI({
+        apiKey: OPENAI_API_KEY
+    })
+
+    const body = await c.req.json()
 
     const genericSchema = z.object({
         data: z.string(),
@@ -114,5 +131,10 @@ export const POST = async (req: NextRequest) => {
         }
     })
 
-    return NextResponse.json(result, {status: 200})
+    return c.json(result)
 }
+)
+
+export default app as never
+
+export const POST = handle(app)
