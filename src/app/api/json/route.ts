@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { ZodTypeAny, z } from "zod"
 import { EXAMPLE_ANSWER, EXAMPLE_PROMPT } from "./example"
 
+export const runtime = 'edge'
+
 const jsonSchemaToZod = (schema: any): ZodTypeAny => {
     const type = determineSchemaType(schema)
 
