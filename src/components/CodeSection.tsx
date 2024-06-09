@@ -4,7 +4,7 @@ import Code from "./Code"
 import { ScrollArea, ScrollBar } from "./ui/scroll-area"
 
 const codeBlock = `const res = await fetch(
-    'https://https://7304f531.jsonapi.pages.dev/api/json', 
+    'https://jsonapi.gncmdev.workers.dev/api', 
     {
         method: 'POST',
         headers: {
